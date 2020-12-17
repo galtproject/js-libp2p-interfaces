@@ -589,6 +589,13 @@ class PubsubBaseProtocol extends EventEmitter {
     await this._publish(msgObject)
   }
 
+  async publishMessage (msgObject) {
+    if (!this.started) {
+      throw new Error('Pubsub has not started')
+    }
+    await this._publish(msgObject)
+  }
+
   /**
    * Overriding the implementation of publish should handle the appropriate algorithms for the publish/subscriber implementation.
    * For example, a Floodsub implementation might simply publish each message to each topic for every peer
