@@ -684,6 +684,13 @@ class PubsubBaseProtocol extends EventEmitter {
     await this._publish(msg)
   }
 
+  /**
+   * Publishes messages to all subscribed peers
+   *
+   * @override
+   * @param {any} msgObject
+   * @returns {Promise<void>}
+   */
   async publishMessage (msgObject) {
     if (!this.started) {
       throw new Error('Pubsub has not started')
