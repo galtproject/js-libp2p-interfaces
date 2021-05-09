@@ -18,9 +18,6 @@
       ]
     }
   },
-  "eslintConfig": {
-    "extends": "ipfs"
-  },
   "scripts": {
     "prepare": "aegir build --no-bundle",
     "lint": "aegir lint",
