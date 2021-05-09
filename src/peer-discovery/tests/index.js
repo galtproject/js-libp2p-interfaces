@@ -1,3 +1,4 @@
+// @ts-nocheck interface tests
 /* eslint-env mocha */
 'use strict'
 
@@ -5,7 +6,7 @@ const chai = require('chai')
 const expect = chai.expect
 chai.use(require('dirty-chai'))
 
-const multiaddr = require('multiaddr')
+const { Multiaddr } = require('multiaddr')
 const PeerId = require('peer-id')
 
 const delay = require('delay')
@@ -54,7 +55,7 @@ module.exports = (common) => {
         expect(PeerId.isPeerId(id)).to.eql(true)
         expect(multiaddrs).to.exist()
 
-        multiaddrs.forEach((m) => expect(multiaddr.isMultiaddr(m)).to.eql(true))
+        multiaddrs.forEach((m) => expect(Multiaddr.isMultiaddr(m)).to.eql(true))
 
         defer.resolve()
       })

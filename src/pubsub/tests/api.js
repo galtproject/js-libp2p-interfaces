@@ -1,3 +1,4 @@
+// @ts-nocheck interface tests
 /* eslint-env mocha */
 'use strict'
 
@@ -76,7 +77,7 @@ module.exports = (common) => {
       const defer = pDefer()
 
       const handler = (msg) => {
-        expect(msg).to.exist()
+        expect(msg).to.not.eql(undefined)
         defer.resolve()
       }
 

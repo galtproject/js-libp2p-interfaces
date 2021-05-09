@@ -1,3 +1,4 @@
+// @ts-nocheck interface tests
 /* eslint-env mocha */
 /* eslint max-nested-callbacks: ["error", 6] */
 'use strict'
@@ -61,7 +62,9 @@ module.exports = (common) => {
           expect(psB.peers.size).to.equal(1)
           expectSet(psB.topics.get(topic), [psA.peerId.toB58String()])
           expect(changedPeerId.toB58String()).to.equal(first(psB.peers).id.toB58String())
-          expect(changedSubs).to.be.eql([{ topicID: topic, subscribe: true }])
+          expect(changedSubs).to.have.lengthOf(1)
+          expect(changedSubs[0].topicID).to.equal(topic)
+          expect(changedSubs[0].subscribe).to.equal(true)
           defer.resolve()
         })
         psA.subscribe(topic)
@@ -143,7 +146,9 @@ module.exports = (common) => {
           expect(psB.peers.size).to.equal(1)
           expectSet(psB.topics.get(topic), [])
           expect(changedPeerId.toB58String()).to.equal(first(psB.peers).id.toB58String())
-          expect(changedSubs).to.be.eql([{ topicID: topic, subscribe: false }])
+          expect(changedSubs).to.have.lengthOf(1)
+          expect(changedSubs[0].topicID).to.equal(topic)
+          expect(changedSubs[0].subscribe).to.equal(false)
 
           defer.resolve()
         })

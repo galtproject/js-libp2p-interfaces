@@ -1,10 +1,17 @@
 'use strict'
 
+// @ts-ignore libp2p crypto has no types
 const randomBytes = require('libp2p-crypto/src/random-bytes')
 const uint8ArrayToString = require('uint8arrays/to-string')
 const uint8ArrayFromString = require('uint8arrays/from-string')
+const PeerId = require('peer-id')
+const multihash = require('multihashes')
 
-exports = module.exports
+/**
+ * @typedef {import('./message/rpc').RPC.IMessage} IMessage
+ * @typedef {import('./message/rpc').RPC.Message} Message
+ * @typedef {import('.').InMessage} NormalizedIMessage
+ */
 
 /**
  * Generatea random sequence number.
@@ -12,7 +19,7 @@ exports = module.exports
  * @returns {Uint8Array}
  * @private
  */
-exports.randomSeqno = () => {
+const randomSeqno = () => {
   return randomBytes(8)
 }
 
@@ -21,27 +28,46 @@ exports.randomSeqno = () => {
  *
  * @param {string} from
  * @param {Uint8Array} seqno
- * @returns {string}
+ * @returns {Uint8Array}
  * @private
  */
-exports.msgId = (from, seqno) => {
-  return from + uint8ArrayToString(seqno, 'base16')
+const msgId = (from, seqno) => {
+  const fromBytes = PeerId.createFromB58String(from).id
+  const msgId = new Uint8Array(fromBytes.length + seqno.length)
+  msgId.set(fromBytes, 0)
+  msgId.set(seqno, fromBytes.length)
+  return msgId
 }
+
+/**
+ * Generate a message id, based on message `data`.
+ *
+ * @param {Uint8Array} data
+ * @returns {Uint8Array}
+ * @private
+ */
+const noSignMsgId = (data) => multihash.encode(data, 'sha2-256')
 
 /**
  * Check if any member of the first set is also a member
  * of the second set.
  *
- * @param {Set|Array} a
- * @param {Set|Array} b
+ * @param {Set<number>|Array<number>} a
+ * @param {Set<number>|Array<number>} b
  * @returns {boolean}
  * @private
  */
-exports.anyMatch = (a, b) => {
+const anyMatch = (a, b) => {
   let bHas
   if (Array.isArray(b)) {
+    /**
+     * @param {number} val
+     */
     bHas = (val) => b.indexOf(val) > -1
   } else {
+    /**
+     * @param {number} val
+     */
     bHas = (val) => b.has(val)
   }
 
@@ -57,11 +83,12 @@ exports.anyMatch = (a, b) => {
 /**
  * Make everything an array.
  *
- * @param {any} maybeArray
- * @returns {Array}
+ * @template T
+ * @param {T|T[]} maybeArray
+ * @returns {T[]}
  * @private
  */
-exports.ensureArray = (maybeArray) => {
+const ensureArray = (maybeArray) => {
   if (!Array.isArray(maybeArray)) {
     return [maybeArray]
   }
@@ -71,12 +98,15 @@ exports.ensureArray = (maybeArray) => {
 
 /**
  * Ensures `message.from` is base58 encoded
- * @param {Object} message
- * @param {Uint8Array|String} message.from
- * @param {String} peerId
- * @return {Object}
+ *
+ * @template {{from?:any}} T
+ * @param {T & IMessage} message
+ * @param {string} [peerId]
+ * @returns {NormalizedIMessage}
  */
-exports.normalizeInRpcMessage = (message, peerId) => {
+const normalizeInRpcMessage = (message, peerId) => {
+  /** @type {NormalizedIMessage} */
+  // @ts-ignore receivedFrom not yet defined
   const m = Object.assign({}, message)
   if (message.from instanceof Uint8Array) {
     m.from = uint8ArrayToString(message.from, 'base58btc')
@@ -87,13 +117,31 @@ exports.normalizeInRpcMessage = (message, peerId) => {
   return m
 }
 
-exports.normalizeOutRpcMessage = (message) => {
+/**
+ * @template {{from?:any, data?:any}} T
+ *
+ * @param {T & NormalizedIMessage} message
+ * @returns {Message}
+ */
+const normalizeOutRpcMessage = (message) => {
+  /** @type {Message} */
+  // @ts-ignore from not yet defined
   const m = Object.assign({}, message)
-  if (typeof message.from === 'string' || message.from instanceof String) {
+  if (typeof message.from === 'string') {
     m.from = uint8ArrayFromString(message.from, 'base58btc')
   }
-  if (typeof message.data === 'string' || message.data instanceof String) {
+  if (typeof message.data === 'string') {
     m.data = uint8ArrayFromString(message.data)
   }
   return m
+}
+
+module.exports = {
+  randomSeqno,
+  msgId,
+  noSignMsgId,
+  anyMatch,
+  ensureArray,
+  normalizeInRpcMessage,
+  normalizeOutRpcMessage
 }

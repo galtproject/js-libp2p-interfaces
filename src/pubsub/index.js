@@ -1,53 +1,71 @@
 'use strict'
 
 const debug = require('debug')
-const EventEmitter = require('events')
+const { EventEmitter } = require('events')
 const errcode = require('err-code')
 
-const pipe = require('it-pipe')
+const { pipe } = require('it-pipe')
 
 const MulticodecTopology = require('../topology/multicodec-topology')
 const { codes } = require('./errors')
-const message = require('./message')
+
+const { RPC } = require('./message/rpc')
 const PeerStreams = require('./peer-streams')
+const { SignaturePolicy } = require('./signature-policy')
 const utils = require('./utils')
+
 const {
   signMessage,
   verifySignature
 } = require('./message/sign')
 
 /**
- * @typedef {Object} InMessage
- * @property {string} from
- * @property {string} receivedFrom
- * @property {string[]} topicIDs
- * @property {Uint8Array} data
- * @property {Uint8Array} [signature]
- * @property {Uint8Array} [key]
+ * @typedef {any} Libp2p
+ * @typedef {import('peer-id')} PeerId
+ * @typedef {import('bl')} BufferList
+ * @typedef {import('../stream-muxer/types').MuxedStream} MuxedStream
+ * @typedef {import('../connection/connection')} Connection
+ * @typedef {import('./signature-policy').SignaturePolicyType} SignaturePolicyType
+ * @typedef {import('./message/rpc').IRPC} IRPC
+ * @typedef {import('./message/rpc').RPC.SubOpts} RPCSubOpts
+ * @typedef {import('./message/rpc').RPC.Message} RPCMessage
  */
 
 /**
-* PubsubBaseProtocol handles the peers and connections logic for pubsub routers
-* and specifies the API that pubsub routers should have.
-*/
+ * @typedef {Object} InMessage
+ * @property {string} [from]
+ * @property {string} receivedFrom
+ * @property {string[]} topicIDs
+ * @property {Uint8Array} [seqno]
+ * @property {Uint8Array} data
+ * @property {Uint8Array} [signature]
+ * @property {Uint8Array} [key]
+ *
+ * @typedef {Object} PubsubProperties
+ * @property {string} debugName - log namespace
+ * @property {Array<string>|string} multicodecs - protocol identificers to connect
+ * @property {Libp2p} libp2p
+ *
+ * @typedef {Object} PubsubOptions
+ * @property {SignaturePolicyType} [globalSignaturePolicy = SignaturePolicy.StrictSign] - defines how signatures should be handled
+ * @property {boolean} [canRelayMessage = false] - if can relay messages not subscribed
+ * @property {boolean} [emitSelf = false] - if publish should emit to self, if subscribed
+ */
+
+/**
+ * PubsubBaseProtocol handles the peers and connections logic for pubsub routers
+ * and specifies the API that pubsub routers should have.
+ */
 class PubsubBaseProtocol extends EventEmitter {
   /**
-   * @param {Object} props
-   * @param {String} props.debugName log namespace
-   * @param {Array<string>|string} props.multicodecs protocol identificers to connect
-   * @param {Libp2p} props.libp2p
-   * @param {boolean} [props.signMessages = true] if messages should be signed
-   * @param {boolean} [props.strictSigning = true] if message signing should be required
-   * @param {boolean} [props.canRelayMessage = false] if can relay messages not subscribed
-   * @param {boolean} [props.emitSelf = false] if publish should emit to self, if subscribed
+   * @param {PubsubProperties & PubsubOptions} props
    * @abstract
    */
   constructor ({
     debugName,
     multicodecs,
     libp2p,
-    signMessages = true,
-    strictSigning = true,
+    globalSignaturePolicy = SignaturePolicy.StrictSign,
     canRelayMessage = false,
     emitSelf = false
   }) {
@@ -65,12 +83,19 @@ class PubsubBaseProtocol extends EventEmitter {
 
     super()
 
-    this.log = debug(debugName)
-    this.log.err = debug(`${debugName}:error`)
+    this.log = Object.assign(debug(debugName), {
+      err: debug(`${debugName}:error`)
+    })
 
+    /**
+     * @type {Array<string>}
+     */
     this.multicodecs = utils.ensureArray(multicodecs)
     this._libp2p = libp2p
     this.registrar = libp2p.registrar
+    /**
+     * @type {PeerId}
+     */
     this.peerId = libp2p.peerId
 
     this.started = false
@@ -84,6 +109,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
     /**
      * List of our subscriptions
+     *
      * @type {Set<string>}
      */
     this.subscriptions = new Set()
@@ -91,40 +117,47 @@ class PubsubBaseProtocol extends EventEmitter {
     /**
      * Map of peer streams
      *
-     * @type {Map<string, PeerStreams>}
+     * @type {Map<string, import('./peer-streams')>}
      */
     this.peers = new Map()
 
-    // Message signing
-    this.signMessages = signMessages
+    // validate signature policy
+    if (!SignaturePolicy[globalSignaturePolicy]) {
+      throw errcode(new Error('Invalid global signature policy'), codes.ERR_INVALID_SIGNATURE_POLICY)
+    }
 
     /**
-     * If message signing should be required for incoming messages
-     * @type {boolean}
+     * The signature policy to follow by default
+     *
+     * @type {string}
      */
-    this.strictSigning = strictSigning
+    this.globalSignaturePolicy = globalSignaturePolicy
 
     /**
      * If router can relay received messages, even if not subscribed
+     *
      * @type {boolean}
      */
     this.canRelayMessage = canRelayMessage
 
     /**
      * if publish should emit to self, if subscribed
+     *
      * @type {boolean}
      */
     this.emitSelf = emitSelf
 
     /**
      * Topic validator function
-     * @typedef {function(string, RPC): boolean} validator
+     *
+     * @typedef {function(string, InMessage): Promise<void>} validator
      */
     /**
      * Topic validator map
      *
      * Keyed by topic
      * Topic validators are functions with the following input:
+     *
      * @type {Map<string, validator>}
      */
     this.topicValidators = new Map()
@@ -139,6 +172,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Register the pubsub protocol onto the libp2p node.
+   *
    * @returns {void}
    */
   start () {
@@ -168,6 +202,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Unregister the pubsub protocol and the streams with other peers will be closed.
+   *
    * @returns {void}
    */
   stop () {
@@ -189,26 +224,28 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * On an inbound stream opened.
-   * @private
+   *
+   * @protected
    * @param {Object} props
    * @param {string} props.protocol
-   * @param {DuplexIterableStream} props.stream
-   * @param {Connection} props.connection connection
+   * @param {MuxedStream} props.stream
+   * @param {Connection} props.connection - connection
    */
   _onIncomingStream ({ protocol, stream, connection }) {
     const peerId = connection.remotePeer
     const idB58Str = peerId.toB58String()
     const peer = this._addPeer(peerId, protocol)
-    peer.attachInboundStream(stream)
+    const inboundStream = peer.attachInboundStream(stream)
 
-    this._processMessages(idB58Str, peer.inboundStream, peer)
+    this._processMessages(idB58Str, inboundStream, peer)
   }
 
   /**
    * Registrar notifies an established connection with pubsub protocol.
-   * @private
-   * @param {PeerId} peerId remote peer-id
-   * @param {Connection} conn connection to the peer
+   *
+   * @protected
+   * @param {PeerId} peerId - remote peer-id
+   * @param {Connection} conn - connection to the peer
    */
   async _onPeerConnected (peerId, conn) {
     const idB58Str = peerId.toB58String()
@@ -228,9 +265,10 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Registrar notifies a closing connection with pubsub protocol.
-   * @private
-   * @param {PeerId} peerId peerId
-   * @param {Error} err error for connection end
+   *
+   * @protected
+   * @param {PeerId} peerId - peerId
+   * @param {Error} [err] - error for connection end
    */
   _onPeerDisconnected (peerId, err) {
     const idB58Str = peerId.toB58String()
@@ -241,7 +279,8 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Notifies the router that a peer has been connected
-   * @private
+   *
+   * @protected
    * @param {PeerId} peerId
    * @param {string} protocol
    * @returns {PeerStreams}
@@ -271,7 +310,8 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Notifies the router that a peer has been disconnected.
-   * @private
+   *
+   * @protected
    * @param {PeerId} peerId
    * @returns {PeerStreams | undefined}
    */
@@ -301,9 +341,10 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Responsible for processing each RPC message received by other peers.
-   * @param {string} idB58Str peer id string in base58
-   * @param {DuplexIterableStream} stream inbound stream
-   * @param {PeerStreams} peerStreams PubSub peer
+   *
+   * @param {string} idB58Str - peer id string in base58
+   * @param {AsyncIterable<Uint8Array|BufferList>} stream - inbound stream
+   * @param {PeerStreams} peerStreams - PubSub peer
    * @returns {Promise<void>}
    */
   async _processMessages (idB58Str, stream, peerStreams) {
@@ -326,7 +367,8 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Handles an rpc request from a peer
-   * @param {String} idB58Str
+   *
+   * @param {string} idB58Str
    * @param {PeerStreams} peerStreams
    * @param {RPC} rpc
    * @returns {boolean}
@@ -338,7 +380,9 @@ class PubsubBaseProtocol extends EventEmitter {
 
     if (subs.length) {
       // update peer subscriptions
-      subs.forEach((subOpt) => this._processRpcSubOpt(idB58Str, subOpt))
+      subs.forEach((subOpt) => {
+        this._processRpcSubOpt(idB58Str, subOpt)
+      })
       this.emit('pubsub:subscription-change', peerStreams.id, subs)
     }
 
@@ -348,8 +392,9 @@ class PubsubBaseProtocol extends EventEmitter {
     }
 
     if (msgs.length) {
-      msgs.forEach(message => {
-        if (!(this.canRelayMessage || message.topicIDs.some((topic) => this.subscriptions.has(topic)))) {
+      // @ts-ignore RPC message is modified
+      msgs.forEach((message) => {
+        if (!(this.canRelayMessage || (message.topicIDs && message.topicIDs.some((topic) => this.subscriptions.has(topic))))) {
           this.log('received message we didn\'t subscribe to. Dropping.')
           return
         }
@@ -362,11 +407,16 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Handles a subscription change from a peer
+   *
    * @param {string} id
-   * @param {RPC.SubOpt} subOpt
+   * @param {RPC.ISubOpts} subOpt
    */
   _processRpcSubOpt (id, subOpt) {
     const t = subOpt.topicID
+
+    if (!t) {
+      return
+    }
 
     let topicSet = this.topics.get(t)
     if (!topicSet) {
@@ -385,6 +435,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Handles an message from a peer
+   *
    * @param {InMessage} msg
    * @returns {Promise<void>}
    */
@@ -409,6 +460,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Emit a message from a peer
+   *
    * @param {InMessage} message
    */
   _emitMessage (message) {
@@ -422,16 +474,27 @@ class PubsubBaseProtocol extends EventEmitter {
   /**
    * The default msgID implementation
    * Child class can override this.
-   * @param {RPC.Message} msg the message object
-   * @returns {string} message id as string
+   *
+   * @param {InMessage} msg - the message object
+   * @returns {Uint8Array} message id as bytes
    */
   getMsgId (msg) {
-    return utils.msgId(msg.from, msg.seqno)
+    const signaturePolicy = this.globalSignaturePolicy
+    switch (signaturePolicy) {
+      case SignaturePolicy.StrictSign:
+        // @ts-ignore seqno is optional in protobuf definition but it will exist
+        return utils.msgId(msg.from, msg.seqno)
+      case SignaturePolicy.StrictNoSign:
+        return utils.noSignMsgId(msg.data)
+      default:
+        throw errcode(new Error('Cannot get message id: unhandled signature policy: ' + signaturePolicy), codes.ERR_UNHANDLED_SIGNATURE_POLICY)
+    }
   }
 
   /**
    * Whether to accept a message from a peer
    * Override to create a graylist
+   *
    * @override
    * @param {string} id
    * @returns {boolean}
@@ -443,27 +506,30 @@ class PubsubBaseProtocol extends EventEmitter {
   /**
    * Decode Uint8Array into an RPC object.
    * This can be override to use a custom router protobuf.
+   *
    * @param {Uint8Array} bytes
    * @returns {RPC}
    */
   _decodeRpc (bytes) {
-    return message.rpc.RPC.decode(bytes)
+    return RPC.decode(bytes)
   }
 
   /**
    * Encode RPC object into a Uint8Array.
    * This can be override to use a custom router protobuf.
-   * @param {RPC} rpc
+   *
+   * @param {IRPC} rpc
    * @returns {Uint8Array}
    */
   _encodeRpc (rpc) {
-    return message.rpc.RPC.encode(rpc)
+    return RPC.encode(rpc).finish()
   }
 
   /**
    * Send an rpc object to a peer
-   * @param {string} id peer id
-   * @param {RPC} rpc
+   *
+   * @param {string} id - peer id
+   * @param {IRPC} rpc
    * @returns {void}
    */
   _sendRpc (id, rpc) {
@@ -479,9 +545,10 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Send subscroptions to a peer
-   * @param {string} id peer id
+   *
+   * @param {string} id - peer id
    * @param {string[]} topics
-   * @param {boolean} subscribe set to false for unsubscriptions
+   * @param {boolean} subscribe - set to false for unsubscriptions
    * @returns {void}
    */
   _sendSubscriptions (id, topics, subscribe) {
@@ -493,42 +560,69 @@ class PubsubBaseProtocol extends EventEmitter {
   /**
    * Validates the given message. The signature will be checked for authenticity.
    * Throws an error on invalid messages
+   *
    * @param {InMessage} message
    * @returns {Promise<void>}
    */
   async validate (message) { // eslint-disable-line require-await
-    // If strict signing is on and we have no signature, abort
-    if (this.strictSigning && !message.signature) {
-      throw errcode(new Error('Signing required and no signature was present'), codes.ERR_MISSING_SIGNATURE)
-    }
-
-    // Check the message signature if present
-    if (message.signature && !(await verifySignature(message))) {
-      throw errcode(new Error('Invalid message signature'), codes.ERR_INVALID_SIGNATURE)
+    const signaturePolicy = this.globalSignaturePolicy
+    switch (signaturePolicy) {
+      case SignaturePolicy.StrictNoSign:
+        if (message.from) {
+          throw errcode(new Error('StrictNoSigning: from should not be present'), codes.ERR_UNEXPECTED_FROM)
+        }
+        if (message.signature) {
+          throw errcode(new Error('StrictNoSigning: signature should not be present'), codes.ERR_UNEXPECTED_SIGNATURE)
+        }
+        if (message.key) {
+          throw errcode(new Error('StrictNoSigning: key should not be present'), codes.ERR_UNEXPECTED_KEY)
+        }
+        if (message.seqno) {
+          throw errcode(new Error('StrictNoSigning: seqno should not be present'), codes.ERR_UNEXPECTED_SEQNO)
+        }
+        break
+      case SignaturePolicy.StrictSign:
+        if (!message.signature) {
+          throw errcode(new Error('StrictSigning: Signing required and no signature was present'), codes.ERR_MISSING_SIGNATURE)
+        }
+        if (!message.seqno) {
+          throw errcode(new Error('StrictSigning: Signing required and no seqno was present'), codes.ERR_MISSING_SEQNO)
+        }
+        if (!(await verifySignature(message))) {
+          throw errcode(new Error('StrictSigning: Invalid message signature'), codes.ERR_INVALID_SIGNATURE)
+        }
+        break
+      default:
+        throw errcode(new Error('Cannot validate message: unhandled signature policy: ' + signaturePolicy), codes.ERR_UNHANDLED_SIGNATURE_POLICY)
     }
 
     for (const topic of message.topicIDs) {
       const validatorFn = this.topicValidators.get(topic)
-      if (!validatorFn) {
-        continue
+      if (validatorFn) {
+        await validatorFn(topic, message)
       }
-      await validatorFn(topic, message)
     }
   }
 
   /**
    * Normalizes the message and signs it, if signing is enabled.
    * Should be used by the routers to create the message to send.
-   * @private
-   * @param {Message} message
-   * @returns {Promise<Message>}
+   *
+   * @protected
+   * @param {InMessage} message
+   * @returns {Promise<InMessage>}
    */
   _buildMessage (message) {
-    const msg = utils.normalizeOutRpcMessage(message)
-    if (this.signMessages) {
-      return signMessage(this.peerId, msg)
-    } else {
-      return message
+    const signaturePolicy = this.globalSignaturePolicy
+    switch (signaturePolicy) {
+      case SignaturePolicy.StrictSign:
+        message.from = this.peerId.toB58String()
+        message.seqno = utils.randomSeqno()
+        return signMessage(this.peerId, utils.normalizeOutRpcMessage(message))
+      case SignaturePolicy.StrictNoSign:
+        return Promise.resolve(message)
+      default:
+        throw errcode(new Error('Cannot build message: unhandled signature policy: ' + signaturePolicy), codes.ERR_UNHANDLED_SIGNATURE_POLICY)
     }
   }
 
@@ -536,6 +630,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Get a list of the peer-ids that are subscribed to one topic.
+   *
    * @param {string} topic
    * @returns {Array<string>}
    */
@@ -557,9 +652,10 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Publishes messages to all subscribed peers
+   *
    * @override
    * @param {string} topic
-   * @param {Buffer} message
+   * @param {Uint8Array} message
    * @returns {Promise<void>}
    */
   async publish (topic, message) {
@@ -570,23 +666,22 @@ class PubsubBaseProtocol extends EventEmitter {
     this.log('publish', topic, message)
 
     const from = this.peerId.toB58String()
-    let msgObject = {
+    const msgObject = {
       receivedFrom: from,
-      from: from,
       data: message,
-      seqno: utils.randomSeqno(),
       topicIDs: [topic]
     }
 
-    // ensure that any operations performed on the message will include the signature
+    // ensure that the message follows the signature policy
     const outMsg = await this._buildMessage(msgObject)
-    msgObject = utils.normalizeInRpcMessage(outMsg)
+    // @ts-ignore different type as from is converted
+    const msg = utils.normalizeInRpcMessage(outMsg)
 
     // Emit to self if I'm interested and emitSelf enabled
-    this.emitSelf && this._emitMessage(msgObject)
+    this.emitSelf && this._emitMessage(msg)
 
     // send to all the other peers
-    await this._publish(msgObject)
+    await this._publish(msg)
   }
 
   async publishMessage (msgObject) {
@@ -599,8 +694,9 @@ class PubsubBaseProtocol extends EventEmitter {
   /**
    * Overriding the implementation of publish should handle the appropriate algorithms for the publish/subscriber implementation.
    * For example, a Floodsub implementation might simply publish each message to each topic for every peer
+   *
    * @abstract
-   * @param {InMessage} message
+   * @param {InMessage|RPCMessage} message
    * @returns {Promise<void>}
    *
    */
@@ -610,6 +706,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Subscribes to a given topic.
+   *
    * @abstract
    * @param {string} topic
    * @returns {void}
@@ -627,6 +724,7 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Unsubscribe from the given topic.
+   *
    * @override
    * @param {string} topic
    * @returns {void}
@@ -644,8 +742,9 @@ class PubsubBaseProtocol extends EventEmitter {
 
   /**
    * Get the list of topics which the peer is subscribed to.
+   *
    * @override
-   * @returns {Array<String>}
+   * @returns {Array<string>}
    */
   getTopics () {
     if (!this.started) {
@@ -656,6 +755,7 @@ class PubsubBaseProtocol extends EventEmitter {
   }
 }
 
+PubsubBaseProtocol.utils = utils
+PubsubBaseProtocol.SignaturePolicy = SignaturePolicy
+
 module.exports = PubsubBaseProtocol
-module.exports.message = message
-module.exports.utils = utils

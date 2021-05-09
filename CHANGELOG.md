@@ -1,10 +1,160 @@
-<a name="0.5.4"></a>
-## [0.5.4](https://github.com/libp2p/js-interfaces/compare/v0.5.1...v0.5.4) (2020-12-17)
+## [0.10.4](https://github.com/libp2p/js-interfaces/compare/v0.10.3...v0.10.4) (2021-04-30)
+
+
+### Bug Fixes
+
+* event emitter and discovery and routing interfaces ([#95](https://github.com/libp2p/js-interfaces/issues/95)) ([93ddaa4](https://github.com/libp2p/js-interfaces/commit/93ddaa4860ff743b312268b6a859b5e6365fff74))
+
+
+
+## [0.10.3](https://github.com/libp2p/js-interfaces/compare/v0.10.2...v0.10.3) (2021-04-22)
+
+
+
+## [0.10.2](https://github.com/libp2p/js-interfaces/compare/v0.10.1...v0.10.2) (2021-04-20)
+
+
+### Bug Fixes
+
+* specify pbjs root ([#93](https://github.com/libp2p/js-interfaces/issues/93)) ([70ae573](https://github.com/libp2p/js-interfaces/commit/70ae573a4ea2ac074f7cda2a732ed5be283e48c4))
+
+
+
+## [0.10.1](https://github.com/libp2p/js-interfaces/compare/v0.10.0...v0.10.1) (2021-04-19)
+
+
+### Features
+
+* export type for new stream muxer function ([#91](https://github.com/libp2p/js-interfaces/issues/91)) ([6467fdd](https://github.com/libp2p/js-interfaces/commit/6467fdd6ce1d13cfa3b34e3aaa73a64a669d2033))
+
+
+
+# [0.10.0](https://github.com/libp2p/js-interfaces/compare/v0.9.0...v0.10.0) (2021-04-12)
+
+
+
+# [0.9.0](https://github.com/libp2p/js-interfaces/compare/v0.8.4...v0.9.0) (2021-04-07)
+
+
+
+## [0.8.4](https://github.com/libp2p/js-interfaces/compare/v0.8.3...v0.8.4) (2021-03-22)
+
+
+### Bug Fixes
+
+* specify connection direction ([#86](https://github.com/libp2p/js-interfaces/issues/86)) ([3b960d5](https://github.com/libp2p/js-interfaces/commit/3b960d516f70f7e198574a736cb09000ddd7a94c))
+
+
+
+## [0.8.3](https://github.com/libp2p/js-interfaces/compare/v0.8.2...v0.8.3) (2021-01-26)
+
+
+
+## [0.8.2](https://github.com/libp2p/js-interfaces/compare/v0.8.1...v0.8.2) (2021-01-20)
+
+
+### Bug Fixes
+
+* event emitter types with local types ([#80](https://github.com/libp2p/js-interfaces/issues/80)) ([ca52077](https://github.com/libp2p/js-interfaces/commit/ca520775eb26f5ed501375fdb24ba698c9a8c8c8))
+
+
+
+## [0.8.1](https://github.com/libp2p/js-interfaces/compare/v0.8.0...v0.8.1) (2020-12-11)
+
+
+### Bug Fixes
+
+* pubsub publish message should be uint8array ([#77](https://github.com/libp2p/js-interfaces/issues/77)) ([5b99e6b](https://github.com/libp2p/js-interfaces/commit/5b99e6b56b10439a82ee88fb4e31fb95c182264f))
+
+
+
+# [0.8.0](https://github.com/libp2p/js-interfaces/compare/v0.7.2...v0.8.0) (2020-12-10)
+
+
+### Features
+
+* add types ([#74](https://github.com/libp2p/js-interfaces/issues/74)) ([e2419ea](https://github.com/libp2p/js-interfaces/commit/e2419ea308b5db38966850ba6349602c93ce3b0e))
+
+
+
+<a name="0.7.2"></a>
+## [0.7.2](https://github.com/libp2p/js-interfaces/compare/v0.7.1...v0.7.2) (2020-11-11)
+
+
+
+<a name="0.7.1"></a>
+## [0.7.1](https://github.com/libp2p/js-interfaces/compare/v0.7.0...v0.7.1) (2020-11-03)
+
+
+### Bug Fixes
+
+* typescript types ([#69](https://github.com/libp2p/js-interfaces/issues/69)) ([269a6f5](https://github.com/libp2p/js-interfaces/commit/269a6f5))
+
+
+
+<a name="0.7.0"></a>
+# [0.7.0](https://github.com/libp2p/js-interfaces/compare/v0.5.2...v0.7.0) (2020-11-03)
+
+
+### Features
+
+* pubsub: add global signature policy ([#66](https://github.com/libp2p/js-interfaces/issues/66)) ([946b046](https://github.com/libp2p/js-interfaces/commit/946b046))
+* update pubsub getMsgId return type to Uint8Array ([#65](https://github.com/libp2p/js-interfaces/issues/65)) ([e148443](https://github.com/libp2p/js-interfaces/commit/e148443))
+
+
+### BREAKING CHANGES
+
+* `signMessages` and `strictSigning` pubsub configuration options replaced
+with a `globalSignaturePolicy` option
+* new getMsgId return type is not backwards compatible with prior `string`
+return type.
+
+
+
+<a name="0.6.0"></a>
+# [0.6.0](https://github.com/libp2p/js-interfaces/compare/v0.5.2...v0.6.0) (2020-10-05)
+
+
+### Features
+
+* update pubsub getMsgId return type to Uint8Array ([#65](https://github.com/libp2p/js-interfaces/issues/65)) ([e148443](https://github.com/libp2p/js-interfaces/commit/e148443))
+
+
+### BREAKING CHANGES
+
+* new getMsgId return type is not backwards compatible with prior `string`
+return type.
 
 
 
 <a name="0.5.2"></a>
-## [0.5.2](https://github.com/libp2p/js-interfaces/compare/v0.5.1...v0.5.2) (2020-12-17)
+## [0.5.2](https://github.com/libp2p/js-interfaces/compare/v0.3.1...v0.5.2) (2020-09-30)
+
+
+### Bug Fixes
+
+* replace remaining Buffer usage with Uint8Array ([#62](https://github.com/libp2p/js-interfaces/issues/62)) ([4130e7f](https://github.com/libp2p/js-interfaces/commit/4130e7f))
+
+
+### Chores
+
+* update deps ([#57](https://github.com/libp2p/js-interfaces/issues/57)) ([75f6777](https://github.com/libp2p/js-interfaces/commit/75f6777))
+
+
+### Features
+
+* interface pubsub ([#60](https://github.com/libp2p/js-interfaces/issues/60)) ([ba15a48](https://github.com/libp2p/js-interfaces/commit/ba15a48))
+* record interface ([#52](https://github.com/libp2p/js-interfaces/issues/52)) ([1cc943e](https://github.com/libp2p/js-interfaces/commit/1cc943e))
+
+
+### BREAKING CHANGES
+
+* records now marshal as Uint8Array instead of Buffer
+
+* fix: refactor remaining Buffer usage to Uint8Array
+* - The peer id dep of this module has replaced node Buffers with Uint8Arrays
+
+* chore: update gh deps
 
 
 

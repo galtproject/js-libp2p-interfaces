@@ -1,3 +1,4 @@
+// @ts-nocheck interface tests
 /* eslint-env mocha */
 /* eslint max-nested-callbacks: ["error", 6] */
 'use strict'
@@ -52,26 +53,20 @@ module.exports = (common) => {
           await common.teardown()
         })
 
-        it('subscribe to the topic on node a', () => {
+        it('subscribe to the topic on node a', async () => {
           const topic = 'Z'
-          const defer = pDefer()
 
           psA.subscribe(topic)
           expectSet(psA.subscriptions, [topic])
 
-          psB.once('pubsub:subscription-change', () => {
-            expect(psB.peers.size).to.equal(2)
+          await new Promise((resolve) => psB.once('pubsub:subscription-change', resolve))
+          expect(psB.peers.size).to.equal(2)
 
-            const aPeerId = psA.peerId.toB58String()
-            expectSet(psB.topics.get(topic), [aPeerId])
+          const aPeerId = psA.peerId.toB58String()
+          expectSet(psB.topics.get(topic), [aPeerId])
 
-            expect(psC.peers.size).to.equal(1)
-            expect(psC.topics.get(topic)).to.not.exist()
-
-            defer.resolve()
-          })
-
-          return defer.promise
+          expect(psC.peers.size).to.equal(1)
+          expect(psC.topics.get(topic)).to.eql(undefined)
         })
 
         it('subscribe to the topic on node b', async () => {
@@ -119,9 +114,9 @@ module.exports = (common) => {
 
           // await subscription change
           await Promise.all([
-            new Promise(resolve => psA.once('pubsub:subscription-change', () => resolve())),
-            new Promise(resolve => psB.once('pubsub:subscription-change', () => resolve())),
-            new Promise(resolve => psC.once('pubsub:subscription-change', () => resolve()))
+            new Promise(resolve => psA.once('pubsub:subscription-change', () => resolve(null))),
+            new Promise(resolve => psB.once('pubsub:subscription-change', () => resolve(null))),
+            new Promise(resolve => psC.once('pubsub:subscription-change', () => resolve(null)))
           ])
 
           // await a cycle
@@ -172,9 +167,9 @@ module.exports = (common) => {
 
             // await subscription change
             await Promise.all([
-              new Promise(resolve => psA.once('pubsub:subscription-change', () => resolve())),
-              new Promise(resolve => psB.once('pubsub:subscription-change', () => resolve())),
-              new Promise(resolve => psC.once('pubsub:subscription-change', () => resolve()))
+              new Promise(resolve => psA.once('pubsub:subscription-change', () => resolve(null))),
+              new Promise(resolve => psB.once('pubsub:subscription-change', () => resolve(null))),
+              new Promise(resolve => psC.once('pubsub:subscription-change', () => resolve(null)))
             ])
 
             psA.on(topic, incMsg)
